@@ -46,33 +46,24 @@ COLOR_PURPLE = (200, 80, 200)
 
 class TTSEngine:
     def __init__(self):
-        self._engine = None
-        self._lock   = threading.Lock()
-        self._init()
-
-    def _init(self):
-        try:
-            import pyttsx3
-            self._engine = pyttsx3.init()
-            self._engine.setProperty("rate", 150)   # words per minute
-            self._engine.setProperty("volume", 1.0)
-        except Exception as e:
-            print(f"[TTS] Warning: pyttsx3 not available ({e}). Install with: pip install pyttsx3")
-            self._engine = None
+        self._lock = threading.Lock()
 
     def speak(self, text):
-        """Speaks text in a background thread — non-blocking."""
-        if not self._engine or not text.strip():
+        if not text or not text.strip():
             return
         def _run():
             with self._lock:
                 try:
-                    self._engine.say(text)
-                    self._engine.runAndWait()
-                except Exception:
-                    pass
+                    import pyttsx3
+                    engine = pyttsx3.init()
+                    engine.setProperty("rate", 150)
+                    engine.setProperty("volume", 1.0)
+                    engine.say(text)
+                    engine.runAndWait()
+                    engine.stop()
+                except Exception as e:
+                    print(f"[TTS] Error: {e}")
         threading.Thread(target=_run, daemon=True).start()
-
 
 # ── Sentence builder ────────────────────────────────────────────────────────────
 
@@ -175,6 +166,8 @@ class GestureClassifier:
         self._hold_count     = 0
         self._last_features  = None
         self._cooldown       = 0
+        self._no_hand_counter = 0        # ← add this
+        self.NO_HAND_THRESHOLD = 50
 
         # Keep PyAutoGUI for mouse/volume (backwards compat with original gestures)
         pyautogui.FAILSAFE = False
@@ -280,7 +273,9 @@ class GestureClassifier:
             self._cooldown -= 1
 
         if len(lm_list) == 21:
-            # If model is loaded — use ML classification
+            # Hand visible — reset space counter
+            self._no_hand_counter = 0
+
             if self._model is not None:
                 sign, conf  = self._predict(lm_list)
                 features    = extract_features(lm_list)
@@ -297,24 +292,33 @@ class GestureClassifier:
                     self.last_signed   = confirmed
                     self.active_action = f"Signed: {confirmed}"
                     self._cooldown     = COOLDOWN_FRAMES
-
-                    # Speak completed sentence when SPACE is signed
-                    if confirmed == "SPACE" and self.builder.completed_sentence:
-                        self.tts.speak(self.builder.completed_sentence)
-                        self.active_action = f"Speaking: {self.builder.completed_sentence}"
                 else:
-                    # Show hold progress
                     if self._hold_count > 0 and sign != "None":
                         pct = int(self._hold_count / HOLD_FRAMES * 100)
                         self.active_action = f"Hold... {pct}%"
                     else:
                         self.active_action = "Reading sign..."
-
             else:
-                # Fallback: original heuristic gestures if model not loaded
                 frame = self._heuristic_fallback(frame, lm_list)
 
-        # Draw UI overlay
+        else:
+            # No hand detected — space countdown
+            if self.builder.current_word_str:
+                self._no_hand_counter += 1
+                remaining = self.NO_HAND_THRESHOLD - self._no_hand_counter
+                self.active_action = f"Space in {remaining} frames — keep hand down"
+
+                if self._no_hand_counter >= self.NO_HAND_THRESHOLD:
+                    word = self.builder.current_word_str
+                    self.builder.add_sign("SPACE")
+                    self.last_signed      = "SPACE"
+                    self.active_action    = f"Word added: {word}"
+                    self._no_hand_counter = 0
+                    self.tts.speak(word)
+            else:
+                self._no_hand_counter = 0
+                self.active_action = "Show a sign..."
+
         frame = self._draw_ui(frame)
         return frame
 

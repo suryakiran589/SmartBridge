@@ -1,25 +1,34 @@
-from flask import Flask, render_template, Response, jsonify
+from flask import Flask, render_template, Response, jsonify, request
 import cv2
+import platform
 from models.gesture_model import GestureClassifier
 import threading
 import time
 
 app = Flask(__name__)
 
-# Initialize Global Variables
-camera = cv2.VideoCapture(0) # 0 for default webcam
-# Reduce resolution for better performance
-camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+# ── Cross-platform camera init ─────────────────────────────────────────────────
+def get_camera():
+    if platform.system() == "Darwin":
+        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+    else:
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return cap
 
+camera = get_camera()
 classifier = GestureClassifier()
 current_state = {
     "gesture": "None",
     "action": "Waiting...",
-    "confidence": "0.00"
+    "confidence": "0.00",
+    "word": "",
+    "sentence": "",
+    "last_signed": ""
 }
 
-# Thread lock for safe access to shared state
 lock = threading.Lock()
 
 def generate_frames():
@@ -28,38 +37,74 @@ def generate_frames():
         success, frame = camera.read()
         if not success:
             break
-        else:
-            # Process the frame for gestures
-            processed_frame = classifier.process_frame(frame)
-            
-            # Update current state safely
-            with lock:
-                current_state = classifier.get_current_state()
 
-            # Encode frame for streaming
-            ret, buffer = cv2.imencode('.jpg', processed_frame)
-            frame = buffer.tobytes()
+        # Fix Mac color space
+        if platform.system() == "Darwin" and frame.ndim == 3 and frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        processed_frame = classifier.process_frame(frame)
+
+        with lock:
+            current_state = classifier.get_current_state()
+
+        ret, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        frame = buffer.tobytes()
+
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+# ── Existing routes ────────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
-    """Video streaming home page."""
     return render_template('index.html')
 
 @app.route('/video_feed')
 def video_feed():
-    """Video streaming route. Put this in the src attribute of an img tag."""
     return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/api/current_state')
 def get_current_state():
-    """API endpoint to get the current gesture and action."""
     with lock:
         return jsonify(current_state)
 
+# ── New routes ─────────────────────────────────────────────────────────────────
+
+@app.route('/api/speak', methods=['POST'])
+def speak():
+    classifier.speak_now()
+    return jsonify({"status": "ok"})
+
+@app.route('/api/speak_text', methods=['POST'])
+def speak_text():
+    data = request.get_json()
+    text = data.get("text", "")
+    if text:
+        classifier.tts.speak(text)
+    return jsonify({"status": "ok"})
+
+@app.route('/api/delete', methods=['POST'])
+def delete_letter():
+    classifier.builder.add_sign("DELETE")
+    return jsonify({"status": "ok"})
+
+@app.route('/api/clear', methods=['POST'])
+def clear():
+    classifier.clear_sentence()
+    return jsonify({"status": "ok"})
+
+@app.route('/api/quick_phrase', methods=['POST'])
+def quick_phrase():
+    data = request.get_json()
+    text = data.get("text", "")
+    if text:
+        classifier.tts.speak(text)
+    return jsonify({"status": "ok"})
+
+# ── Run ────────────────────────────────────────────────────────────────────────
+
 if __name__ == '__main__':
-    # Run the app locally over port 5002
+    print("\n SignBridge — Sign Language to Speech")
+    print(" Running at http://localhost:5002\n")
     app.run(host='0.0.0.0', port=5002, debug=False, threaded=True)

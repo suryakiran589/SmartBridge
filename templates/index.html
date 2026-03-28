@@ -12,82 +12,100 @@
 </head>
 
 <body>
-    <div class="background-elements">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-    </div>
-
-    <div class="container">
-
-        <header class="header blur-panel">
-            <h1><i class="fa-solid fa-hand-sparkles"></i> AI Gesture System</h1>
-            <p>Real-Time Touchless Interface</p>
-        </header>
-
-        <main class="dashboard">
-            <!-- Video Feed Section -->
-            <section class="video-container blur-panel">
-                <div class="video-header">
-                    <h2><i class="fa-solid fa-camera"></i> Live Feed</h2>
-                    <span class="status-indicator">
-                        <span class="dot"></span> Active
-                    </span>
-                </div>
-                <div class="video-wrapper">
-                    <!-- The source is the Flask route providing the MJPEG stream -->
-                    <img id="videoStream" src="{{ url_for('video_feed') }}" alt="Webcam Feed">
-                </div>
-            </section>
-
-            <!-- Stats & Status Section -->
-            <section class="stats-container">
-                <div class="stat-card blur-panel active-highlight">
-                    <div class="stat-icon">
-                        <i class="fa-solid fa-hand-pointer"></i>
-                    </div>
-                    <div class="stat-details">
-                        <h3>Detected Gesture</h3>
-                        <p id="gesture-text" class="stat-value pulse-text">Waiting...</p>
-                    </div>
-                </div>
-
-                <div class="stat-card blur-panel">
-                    <div class="stat-icon action-icon">
-                        <i class="fa-solid fa-bolt"></i>
-                    </div>
-                    <div class="stat-details">
-                        <h3>Triggered Action</h3>
-                        <p id="action-text" class="stat-value">None</p>
-                    </div>
-                </div>
-
-                <div class="stat-card blur-panel">
-                    <div class="stat-icon confidence-icon">
-                        <i class="fa-solid fa-chart-line"></i>
-                    </div>
-                    <div class="stat-details">
-                        <h3>Model Confidence</h3>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" id="confidence-bar" style="width: 0%;"></div>
-                        </div>
-                        <p id="confidence-text" class="stat-value small">0%</p>
-                    </div>
-                </div>
-            </section>
-        </main>
-
-        <footer class="footer blur-panel">
-            <h3>Available Gestures</h3>
-            <div class="gesture-legend">
-                <div class="legend-item">🖐️ Open Palm <span>(Mouse Move)</span></div>
-                <div class="legend-item">✊ Fist <span>(Scroll Down)</span></div>
-                <div class="legend-item">👆 Pointing <span>(Volume Ctrl)</span></div>
-                <div class="legend-item">✌️ Peace <span>(Click)</span></div>
-                <div class="legend-item">👍 Thumbs Up <span>(Play/Pause)</span></div>
+     <div class="app">
+ 
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-dot"></div>
+                SignBridge
             </div>
-        </footer>
+            <div class="header-right">
+                <div class="pill" id="statusPill">
+                    <div class="pill-dot"></div>
+                    <span id="statusText">LIVE</span>
+                </div>
+                <div class="pill">
+                    CONF: <span id="confValue">—</span>
+                </div>
+            </div>
+        </header>
+ 
+        <!-- Main -->
+        <main class="main">
+ 
+            <!-- Left: video -->
+            <div class="video-panel">
+                <div class="video-wrapper">
+                    <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Camera feed" />
+ 
+                    <!-- Letter chips -->
+                    <div class="letters-row" id="lettersRow"></div>
+ 
+                    <!-- Gesture overlay -->
+                    <div class="gesture-overlay">
+                        <div class="gesture-label" id="gestureLabel">Waiting...</div>
+                        <div class="gesture-sub" id="gestureAction">Show your hand to the camera</div>
+                        <div class="conf-track">
+                            <div class="conf-fill" id="confBar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+ 
+            <!-- Right: controls -->
+            <div class="right-panel">
+ 
+                <!-- Sentence builder -->
+                <div class="section">
+                    <div class="section-label">Sentence Builder</div>
+                    <div class="builder-body">
+                        <div class="word-row">
+                            <span class="mini-tag">Word</span>
+                            <div class="word-display" id="wordDisplay">
+                                <span class="cursor"></span>
+                            </div>
+                        </div>
+                        <div class="sentence-display" id="sentenceDisplay">
+                            Sentence will appear here...
+                        </div>
+                    </div>
+                </div>
+ 
+                <!-- Action buttons -->
+                <div class="action-row">
+                    <button class="btn btn-speak" onclick="speakNow()">▶ Speak</button>
+                    <button class="btn btn-muted" onclick="deleteLetter()">⌫ Delete</button>
+                    <button class="btn btn-muted btn-danger" onclick="clearAll()">✕ Clear</button>
+                </div>
+ 
+                <!-- Quick phrases -->
+                <div class="section">
+                    <div class="section-label">Quick Phrases</div>
+                    <div class="quick-grid">
+                        <button class="quick-btn" onclick="quickPhrase('Hello')">👋 Hello</button>
+                        <button class="quick-btn" onclick="quickPhrase('Help me')">🆘 Help me</button>
+                        <button class="quick-btn" onclick="quickPhrase('Thank you')">🙏 Thank you</button>
+                        <button class="quick-btn" onclick="quickPhrase('Yes')">✓ Yes</button>
+                        <button class="quick-btn" onclick="quickPhrase('No')">✕ No</button>
+                        <button class="quick-btn" onclick="quickPhrase('I need water')">💧 Water</button>
+                        <button class="quick-btn" onclick="quickPhrase('I am in pain')">⚠ Pain</button>
+                        <button class="quick-btn" onclick="quickPhrase('Please wait')">⏳ Wait</button>
+                    </div>
+                </div>
+ 
+                <!-- History -->
+                <div class="section section-grow">
+                    <div class="section-label">Sentence History</div>
+                    <div class="history-list" id="historyList">
+                        <div class="empty-msg" id="emptyMsg">No sentences yet</div>
+                    </div>
+                </div>
+ 
+            </div>
+        </main>
     </div>
-
+ 
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 
