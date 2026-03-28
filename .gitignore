@@ -1,0 +1,22 @@
+# Virtual environments
+venv/
+env/
+.venv/
+models/.venv/
+
+# Dataset
+data/
+
+# Trained model files
+models/gesture_classifier.pkl
+models/label_map.json
+models/confusion_matrix.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db

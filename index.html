@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Hand Gesture Control</title>
+    <!-- Modern Font: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="background-elements">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="container">
+
+        <header class="header blur-panel">
+            <h1><i class="fa-solid fa-hand-sparkles"></i> AI Gesture System</h1>
+            <p>Real-Time Touchless Interface</p>
+        </header>
+
+        <main class="dashboard">
+            <!-- Video Feed Section -->
+            <section class="video-container blur-panel">
+                <div class="video-header">
+                    <h2><i class="fa-solid fa-camera"></i> Live Feed</h2>
+                    <span class="status-indicator">
+                        <span class="dot"></span> Active
+                    </span>
+                </div>
+                <div class="video-wrapper">
+                    <!-- The source is the Flask route providing the MJPEG stream -->
+                    <img id="videoStream" src="{{ url_for('video_feed') }}" alt="Webcam Feed">
+                </div>
+            </section>
+
+            <!-- Stats & Status Section -->
+            <section class="stats-container">
+                <div class="stat-card blur-panel active-highlight">
+                    <div class="stat-icon">
+                        <i class="fa-solid fa-hand-pointer"></i>
+                    </div>
+                    <div class="stat-details">
+                        <h3>Detected Gesture</h3>
+                        <p id="gesture-text" class="stat-value pulse-text">Waiting...</p>
+                    </div>
+                </div>
+
+                <div class="stat-card blur-panel">
+                    <div class="stat-icon action-icon">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                    <div class="stat-details">
+                        <h3>Triggered Action</h3>
+                        <p id="action-text" class="stat-value">None</p>
+                    </div>
+                </div>
+
+                <div class="stat-card blur-panel">
+                    <div class="stat-icon confidence-icon">
+                        <i class="fa-solid fa-chart-line"></i>
+                    </div>
+                    <div class="stat-details">
+                        <h3>Model Confidence</h3>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="confidence-bar" style="width: 0%;"></div>
+                        </div>
+                        <p id="confidence-text" class="stat-value small">0%</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer blur-panel">
+            <h3>Available Gestures</h3>
+            <div class="gesture-legend">
+                <div class="legend-item">🖐️ Open Palm <span>(Mouse Move)</span></div>
+                <div class="legend-item">✊ Fist <span>(Scroll Down)</span></div>
+                <div class="legend-item">👆 Pointing <span>(Volume Ctrl)</span></div>
+                <div class="legend-item">✌️ Peace <span>(Click)</span></div>
+                <div class="legend-item">👍 Thumbs Up <span>(Play/Pause)</span></div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+
+</html>
