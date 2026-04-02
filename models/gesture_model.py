@@ -1,16 +1,9 @@
 """
 gesture_model.py  —  ML-powered ISL/ASL Sign Language Classifier
 =================================================================
-Drop-in replacement for the original heuristic-based GestureClassifier.
-app.py requires ZERO changes — same class name, same methods.
-
-New capabilities:
-  - ML model (RandomForest or MLP) replaces finger-counting heuristics
-  - Recognises A-Z (minus J,Z) + 0-9 = 34 sign classes
-  - Hold-to-confirm: sign must be stable for N frames before accepted
-  - Sentence builder: signs → words → sentences
-  - Text-to-speech: speaks completed sentences aloud
-  - Confidence threshold: rejects uncertain predictions
+Two modes:
+  MODE 1 — Sign Language: ML classifier → sentence builder → TTS
+  MODE 2 — Gesture Control: finger counting → mouse / scroll / volume / media
 """
 
 import cv2
@@ -28,12 +21,15 @@ from utils.hand_tracking import HandTracker
 MODEL_PATH     = os.path.join(os.path.dirname(__file__), "gesture_classifier.pkl")
 LABEL_MAP_PATH = os.path.join(os.path.dirname(__file__), "label_map.json")
 
-CONFIDENCE_THRESHOLD = 0.75   # below this → rejected as "None"
-HOLD_FRAMES          = 20     # frames sign must be stable before accepted
-HOLD_THRESHOLD       = 0.12   # max feature drift allowed during hold
-COOLDOWN_FRAMES      = 30     # frames to wait after accepting a sign
+CONFIDENCE_THRESHOLD = 0.75
+HOLD_FRAMES          = 20
+HOLD_THRESHOLD       = 0.12
+COOLDOWN_FRAMES      = 30
 
-# UI colors (BGR)
+MODE_SIGN    = "sign"
+MODE_CONTROL = "control"
+
+# Colors (BGR)
 COLOR_GREEN  = (0, 220, 80)
 COLOR_AMBER  = (0, 165, 255)
 COLOR_RED    = (0, 60, 220)
@@ -42,7 +38,7 @@ COLOR_GRAY   = (160, 160, 160)
 COLOR_PURPLE = (200, 80, 200)
 
 
-# ── TTS engine (runs in background thread to avoid blocking video) ──────────────
+# ── TTS engine ─────────────────────────────────────────────────────────────────
 
 class TTSEngine:
     def __init__(self):
@@ -65,21 +61,15 @@ class TTSEngine:
                     print(f"[TTS] Error: {e}")
         threading.Thread(target=_run, daemon=True).start()
 
+
 # ── Sentence builder ────────────────────────────────────────────────────────────
 
 class SentenceBuilder:
-    """
-    Accumulates confirmed signs into letters → words → sentences.
-    Special signs:
-        SPACE   → commit current word to sentence
-        DELETE  → remove last letter
-        CLEAR   → clear entire sentence
-    """
     def __init__(self):
-        self.current_word : list[str] = []
-        self.sentence     : list[str] = []
+        self.current_word = []
+        self.sentence     = []
 
-    def add_sign(self, sign: str):
+    def add_sign(self, sign):
         sign = sign.upper()
         if sign == "SPACE":
             if self.current_word:
@@ -89,7 +79,6 @@ class SentenceBuilder:
             if self.current_word:
                 self.current_word.pop()
             elif self.sentence:
-                # restore last word for editing
                 self.current_word = list(self.sentence.pop())
         elif sign == "CLEAR":
             self.current_word = []
@@ -98,37 +87,29 @@ class SentenceBuilder:
             self.current_word.append(sign)
 
     @property
-    def current_word_str(self) -> str:
+    def current_word_str(self):
         return "".join(self.current_word)
 
     @property
-    def sentence_str(self) -> str:
+    def sentence_str(self):
         words = self.sentence + ([self.current_word_str] if self.current_word else [])
         return " ".join(words)
 
     @property
-    def completed_sentence(self) -> str:
-        """Returns only the committed words (not the word being typed)."""
+    def completed_sentence(self):
         return " ".join(self.sentence)
 
 
-# ── Feature extraction (must match train_model.py exactly) ──────────────────────
+# ── Feature extraction ──────────────────────────────────────────────────────────
 
 def extract_features(lm_list):
-    """
-    Takes find_position() output: [[id, cx, cy], ...]
-    Returns normalized 63-dim feature vector or None if invalid.
-    """
     if len(lm_list) != 21:
         return None
-
-    coords = [(pt[1], pt[2], 0.0) for pt in lm_list]  # x, y, z(=0 from pixel coords)
+    coords = [(pt[1], pt[2], 0.0) for pt in lm_list]
     wx, wy, _ = coords[0]
-
     xs    = [c[0] for c in coords]
     ys    = [c[1] for c in coords]
     scale = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
-
     features = []
     for (x, y, z) in coords:
         features.extend([(x - wx) / scale, (y - wy) / scale, z])
@@ -138,17 +119,16 @@ def extract_features(lm_list):
 # ── Main classifier ─────────────────────────────────────────────────────────────
 
 class GestureClassifier:
-    """
-    Drop-in replacement for the original heuristic GestureClassifier.
-    Identical public interface: process_frame(), get_current_state()
-    """
 
     def __init__(self):
         self.tracker = HandTracker(detection_con=0.8, track_con=0.7)
 
+        # Mode
+        self.mode = MODE_SIGN
+
         # Load trained model
-        self._model    = None
-        self._classes  = []
+        self._model   = None
+        self._classes = []
         self._load_model()
 
         # Sentence builder + TTS
@@ -156,137 +136,139 @@ class GestureClassifier:
         self.tts     = TTSEngine()
 
         # State
-        self.active_gesture  = "None"
-        self.active_action   = "Waiting..."
-        self.confidence      = 0.0
-        self.last_signed     = ""
+        self.active_gesture = "None"
+        self.active_action  = "Waiting..."
+        self.confidence     = 0.0
+        self.last_signed    = ""
 
         # Hold-to-confirm state
-        self._hold_sign      = None
-        self._hold_count     = 0
-        self._last_features  = None
-        self._cooldown       = 0
-        self._no_hand_counter = 0        # ← add this
+        self._hold_sign     = None
+        self._hold_count    = 0
+        self._last_features = None
+        self._cooldown      = 0
+
+        # Space detection
+        self._no_hand_counter  = 0
         self.NO_HAND_THRESHOLD = 50
 
-        # Keep PyAutoGUI for mouse/volume (backwards compat with original gestures)
+        # PyAutoGUI (control mode)
         pyautogui.FAILSAFE = False
         pyautogui.PAUSE    = 0.01
         self.screen_w, self.screen_h = pyautogui.size()
         self.cam_w, self.cam_h       = 640, 480
         self.ploc_x = self.ploc_y    = 0
+        self.cloc_x = self.cloc_y    = 0
         self.smoothing               = 5
-        self.frame_reduction         = 80
+        self.frame_reduction         = 100
+        self.action_cooldown         = 15
+        self.cooldown_counter        = 0
+
+    # ── Mode toggle ───────────────────────────────────────────────────────────
+
+    def toggle_mode(self):
+        if self.mode == MODE_SIGN:
+            self.mode = MODE_CONTROL
+            self._hold_count      = 0
+            self._hold_sign       = None
+            self._no_hand_counter = 0
+        else:
+            self.mode = MODE_SIGN
+            self.cooldown_counter = 0
+        return self.mode
 
     # ── Model loading ─────────────────────────────────────────────────────────
 
     def _load_model(self):
         if not os.path.exists(MODEL_PATH):
             print(f"[GestureClassifier] WARNING: Model not found at {MODEL_PATH}")
-            print("  Run:  python train_model.py")
-            print("  Falling back to heuristic mode.\n")
             return
-
         try:
-            bundle          = joblib.load(MODEL_PATH)
-            self._model     = bundle["model"]
-            self._classes   = bundle["classes"]
-            model_name      = bundle.get("model_name", "unknown")
-            accuracy        = bundle.get("accuracy", 0)
+            bundle        = joblib.load(MODEL_PATH)
+            self._model   = bundle["model"]
+            self._classes = bundle["classes"]
+            model_name    = bundle.get("model_name", "unknown")
+            accuracy      = bundle.get("accuracy", 0)
             print(f"[GestureClassifier] Model loaded: {model_name} ({accuracy*100:.1f}% accuracy)")
-            print(f"  Classes ({len(self._classes)}): {self._classes}")
         except Exception as e:
             print(f"[GestureClassifier] ERROR loading model: {e}")
 
     # ── ML prediction ─────────────────────────────────────────────────────────
 
     def _predict(self, lm_list):
-        """Returns (label, confidence) or ('None', 0.0) if model not loaded."""
         if self._model is None:
             return "None", 0.0
-
         features = extract_features(lm_list)
         if features is None:
             return "None", 0.0
-
-        X      = np.array(features).reshape(1, -1)
-        probs  = self._model.predict_proba(X)[0]
-        idx    = probs.argmax()
-        conf   = probs[idx]
-
+        X     = np.array(features).reshape(1, -1)
+        probs = self._model.predict_proba(X)[0]
+        idx   = probs.argmax()
+        conf  = probs[idx]
         if conf < CONFIDENCE_THRESHOLD:
             return "None", float(conf)
-
         return self._classes[idx], float(conf)
 
-    # ── Hold-to-confirm logic ─────────────────────────────────────────────────
+    # ── Hold-to-confirm ───────────────────────────────────────────────────────
 
     def _update_hold(self, sign, features):
-        """
-        Returns the confirmed sign once it has been held stable for
-        HOLD_FRAMES consecutive frames. Returns None otherwise.
-        """
         if sign == "None" or features is None:
             self._hold_count = max(0, self._hold_count - 2)
             self._hold_sign  = None
             return None
-
-        # Check if same sign as last frame
         if sign != self._hold_sign:
-            self._hold_sign  = sign
-            self._hold_count = 1
+            self._hold_sign     = sign
+            self._hold_count    = 1
             self._last_features = features
             return None
-
-        # Check positional stability
         if self._last_features is not None:
-            drift = np.linalg.norm(
-                np.array(features) - np.array(self._last_features)
-            )
+            drift = np.linalg.norm(np.array(features) - np.array(self._last_features))
             if drift > HOLD_THRESHOLD:
-                self._hold_count = max(0, self._hold_count - 1)
+                self._hold_count    = max(0, self._hold_count - 1)
                 self._last_features = features
                 return None
-
         self._hold_count   += 1
         self._last_features = features
-
         if self._hold_count >= HOLD_FRAMES:
             self._hold_count = 0
             self._hold_sign  = None
             return sign
-
         return None
 
-    # ── Frame processing (public API — called by app.py) ──────────────────────
+    # ── Frame processing ───────────────────────────────────────────────────────
 
     def process_frame(self, frame):
-        frame = cv2.flip(frame, 1)
-        frame = self.tracker.find_hands(frame)
+        frame   = cv2.flip(frame, 1)
+        frame   = self.tracker.find_hands(frame)
         lm_list = self.tracker.find_position(frame, draw=False)
 
         self.active_gesture = "None"
-        self.active_action  = "Show a sign..."
+        self.active_action  = "Show a sign..." if self.mode == MODE_SIGN else "Show a gesture..."
         self.confidence     = 0.0
 
+        if self.mode == MODE_SIGN:
+            frame = self._process_sign_mode(frame, lm_list)
+        else:
+            frame = self._process_control_mode(frame, lm_list)
+
+        frame = self._draw_ui(frame)
+        return frame
+
+    # ── Sign language mode ────────────────────────────────────────────────────
+
+    def _process_sign_mode(self, frame, lm_list):
         if self._cooldown > 0:
             self._cooldown -= 1
 
         if len(lm_list) == 21:
-            # Hand visible — reset space counter
             self._no_hand_counter = 0
-
             if self._model is not None:
                 sign, conf  = self._predict(lm_list)
                 features    = extract_features(lm_list)
                 self.confidence     = conf
                 self.active_gesture = sign if sign != "None" else "..."
-
-                # Hold-to-confirm
                 confirmed = None
                 if self._cooldown == 0:
                     confirmed = self._update_hold(sign, features)
-
                 if confirmed:
                     self.builder.add_sign(confirmed)
                     self.last_signed   = confirmed
@@ -299,15 +281,12 @@ class GestureClassifier:
                     else:
                         self.active_action = "Reading sign..."
             else:
-                frame = self._heuristic_fallback(frame, lm_list)
-
+                self.active_action = "No model — run train_model.py"
         else:
-            # No hand detected — space countdown
             if self.builder.current_word_str:
                 self._no_hand_counter += 1
                 remaining = self.NO_HAND_THRESHOLD - self._no_hand_counter
-                self.active_action = f"Space in {remaining} frames — keep hand down"
-
+                self.active_action = f"Space in {remaining} frames..."
                 if self._no_hand_counter >= self.NO_HAND_THRESHOLD:
                     word = self.builder.current_word_str
                     self.builder.add_sign("SPACE")
@@ -317,63 +296,24 @@ class GestureClassifier:
                     self.tts.speak(word)
             else:
                 self._no_hand_counter = 0
-                self.active_action = "Show a sign..."
-
-        frame = self._draw_ui(frame)
+                self.active_action    = "Show a sign..."
         return frame
 
-    # ── UI drawing ────────────────────────────────────────────────────────────
+    # ── Gesture control mode ──────────────────────────────────────────────────
 
-    def _draw_ui(self, frame):
-        h, w = frame.shape[:2]
+    def _process_control_mode(self, frame, lm_list):
+        if self.cooldown_counter > 0:
+            self.cooldown_counter -= 1
 
-        # Semi-transparent top bar
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (w, 100), (20, 20, 20), -1)
-        frame = cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
+        cv2.rectangle(frame,
+            (self.frame_reduction, self.frame_reduction),
+            (self.cam_w - self.frame_reduction, self.cam_h - self.frame_reduction),
+            (255, 0, 255), 2)
 
-        # Current gesture (large)
-        conf_color = COLOR_GREEN if self.confidence >= CONFIDENCE_THRESHOLD else COLOR_AMBER
-        cv2.putText(frame, self.active_gesture, (16, 46),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.4, conf_color, 2)
+        if len(lm_list) == 0:
+            self.active_action = "No hand detected"
+            return frame
 
-        # Confidence bar
-        bar_w = int(180 * min(self.confidence, 1.0))
-        cv2.rectangle(frame, (16, 58), (196, 70), (60, 60, 60), -1)
-        cv2.rectangle(frame, (16, 58), (16 + bar_w, 70), conf_color, -1)
-        cv2.putText(frame, f"{self.confidence*100:.0f}%", (202, 70),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, COLOR_GRAY, 1)
-
-        # Action status
-        cv2.putText(frame, self.active_action, (16, 90),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, COLOR_WHITE, 1)
-
-        # Hold progress bar (when stabilising)
-        if self._hold_count > 0:
-            hold_w = int((w - 32) * self._hold_count / HOLD_FRAMES)
-            cv2.rectangle(frame, (16, h - 24), (w - 16, h - 14), (60, 60, 60), -1)
-            cv2.rectangle(frame, (16, h - 24), (16 + hold_w, h - 14), COLOR_GREEN, -1)
-            cv2.putText(frame, "Hold steady", (16, h - 28),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, COLOR_GRAY, 1)
-
-        # Sentence builder overlay (bottom)
-        overlay2 = frame.copy()
-        cv2.rectangle(overlay2, (0, h - 90), (w, h - 26), (20, 20, 20), -1)
-        frame = cv2.addWeighted(overlay2, 0.55, frame, 0.45, 0)
-
-        word_display = f"Word: {self.builder.current_word_str}_" if self.builder.current_word_str else "Word: _"
-        sent_display = f"Sentence: {self.builder.sentence_str}" if self.builder.sentence_str else "Sentence: (sign letters, SPACE=word break)"
-
-        cv2.putText(frame, word_display, (16, h - 68),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, COLOR_AMBER, 1)
-        cv2.putText(frame, sent_display[:72], (16, h - 44),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1)
-
-        return frame
-
-    # ── Heuristic fallback (original logic — used if model not loaded) ─────────
-
-    def _heuristic_fallback(self, frame, lm_list):
         tip_ids = [4, 8, 12, 16, 20]
         fingers = []
         if lm_list[tip_ids[0]][1] > lm_list[tip_ids[0] - 1][1]:
@@ -389,42 +329,128 @@ class GestureClassifier:
         if total == 5:
             self.active_gesture = "Open Palm"
             self.active_action  = "Mouse Movement"
-            x1, y1 = lm_list[8][1], lm_list[8][2]
-            x3 = np.interp(x1, (self.frame_reduction, self.cam_w - self.frame_reduction), (0, self.screen_w))
-            y3 = np.interp(y1, (self.frame_reduction, self.cam_h - self.frame_reduction), (0, self.screen_h))
-            self.cloc_x = self.ploc_x + (x3 - self.ploc_x) / self.smoothing
-            self.cloc_y = self.ploc_y + (y3 - self.ploc_y) / self.smoothing
-            try:
-                pyautogui.moveTo(self.screen_w - self.cloc_x, self.cloc_y)
-                self.ploc_x, self.ploc_y = self.cloc_x, self.cloc_y
-            except Exception:
-                pass
+            self._move_mouse(lm_list[8], frame)
+
         elif total == 0:
             self.active_gesture = "Fist"
             self.active_action  = "Scroll Down"
-            pyautogui.scroll(-300)
+            if self.cooldown_counter == 0:
+                pyautogui.scroll(-500)
+                self.cooldown_counter = self.action_cooldown
+
+        elif fingers == [1, 1, 0, 0, 0]:
+            self.active_gesture = "Pointing / Volume"
+            self.active_action  = "Pinch=Vol Down  Spread=Vol Up"
+            length, frame, info = self.tracker.find_distance(4, 8, frame)
+            if length < 30 and self.cooldown_counter == 0:
+                pyautogui.press('volumedown')
+                self.active_action    = "Volume Down"
+                self.cooldown_counter = self.action_cooldown
+            elif length > 120 and self.cooldown_counter == 0:
+                pyautogui.press('volumeup')
+                self.active_action    = "Volume Up"
+                self.cooldown_counter = self.action_cooldown
+
+        elif fingers == [0, 1, 1, 0, 0]:
+            self.active_gesture = "Peace Sign"
+            self.active_action  = "Click"
+            length, frame, info = self.tracker.find_distance(8, 12, frame)
+            if length < 40 and self.cooldown_counter == 0:
+                cv2.circle(frame, (info[4], info[5]), 15, (0, 255, 0), cv2.FILLED)
+                pyautogui.click()
+                self.active_action    = "Clicked!"
+                self.cooldown_counter = self.action_cooldown
+
+        elif fingers == [1, 0, 0, 0, 0]:
+            self.active_gesture = "Thumbs Up"
+            self.active_action  = "Play / Pause"
+            if self.cooldown_counter == 0:
+                pyautogui.press('playpause')
+                self.cooldown_counter = self.action_cooldown * 2
 
         return frame
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    # ── Mouse helper ──────────────────────────────────────────────────────────
+
+    def _move_mouse(self, index_finger_lm, frame):
+        x1, y1 = index_finger_lm[1], index_finger_lm[2]
+        x3 = np.interp(x1, (self.frame_reduction, self.cam_w - self.frame_reduction), (0, self.screen_w))
+        y3 = np.interp(y1, (self.frame_reduction, self.cam_h - self.frame_reduction), (0, self.screen_h))
+        self.cloc_x = self.ploc_x + (x3 - self.ploc_x) / self.smoothing
+        self.cloc_y = self.ploc_y + (y3 - self.ploc_y) / self.smoothing
+        try:
+            pyautogui.moveTo(self.screen_w - self.cloc_x, self.cloc_y)
+            cv2.circle(frame, (x1, y1), 15, (255, 0, 255), cv2.FILLED)
+            self.ploc_x, self.ploc_y = self.cloc_x, self.cloc_y
+        except Exception:
+            pass
+
+    # ── UI drawing ─────────────────────────────────────────────────────────────
+
+    def _draw_ui(self, frame):
+        h, w = frame.shape[:2]
+
+        # Mode badge top right of video
+        mode_color = COLOR_GREEN if self.mode == MODE_SIGN else COLOR_PURPLE
+        mode_label = "SIGN LANG" if self.mode == MODE_SIGN else "CONTROL"
+        cv2.rectangle(frame, (w - 130, 10), (w - 10, 36), mode_color, -1)
+        cv2.putText(frame, mode_label, (w - 122, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+
+        # Top bar
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (w, 100), (20, 20, 20), -1)
+        frame = cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
+
+        conf_color = COLOR_GREEN if self.confidence >= CONFIDENCE_THRESHOLD else COLOR_AMBER
+        cv2.putText(frame, self.active_gesture, (16, 46),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.4, conf_color, 2)
+
+        bar_w = int(180 * min(self.confidence, 1.0))
+        cv2.rectangle(frame, (16, 58), (196, 70), (60, 60, 60), -1)
+        cv2.rectangle(frame, (16, 58), (16 + bar_w, 70), conf_color, -1)
+        cv2.putText(frame, f"{self.confidence*100:.0f}%", (202, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, COLOR_GRAY, 1)
+        cv2.putText(frame, self.active_action, (16, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, COLOR_WHITE, 1)
+
+        if self.mode == MODE_SIGN and self._hold_count > 0:
+            hold_w = int((w - 32) * self._hold_count / HOLD_FRAMES)
+            cv2.rectangle(frame, (16, h - 24), (w - 16, h - 14), (60, 60, 60), -1)
+            cv2.rectangle(frame, (16, h - 24), (16 + hold_w, h - 14), COLOR_GREEN, -1)
+            cv2.putText(frame, "Hold steady", (16, h - 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, COLOR_GRAY, 1)
+
+        if self.mode == MODE_SIGN:
+            overlay2 = frame.copy()
+            cv2.rectangle(overlay2, (0, h - 90), (w, h - 26), (20, 20, 20), -1)
+            frame = cv2.addWeighted(overlay2, 0.55, frame, 0.45, 0)
+            word_display = f"Word: {self.builder.current_word_str}_" if self.builder.current_word_str else "Word: _"
+            sent_display = f"Sentence: {self.builder.sentence_str}" if self.builder.sentence_str else "Sentence: (sign letters)"
+            cv2.putText(frame, word_display, (16, h - 68),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, COLOR_AMBER, 1)
+            cv2.putText(frame, sent_display[:72], (16, h - 44),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1)
+
+        return frame
+
+    # ── Public API ─────────────────────────────────────────────────────────────
 
     def get_current_state(self):
-        """Called by app.py — identical return format as original."""
         return {
             "gesture":    self.active_gesture,
             "action":     self.active_action,
             "confidence": f"{self.confidence:.2f}",
             "word":       self.builder.current_word_str,
             "sentence":   self.builder.sentence_str,
-            "last_signed": self.last_signed
+            "last_signed": self.last_signed,
+            "mode":       self.mode
         }
 
     def clear_sentence(self):
-        """Called if you add a 'clear' button to the frontend."""
         self.builder.add_sign("CLEAR")
 
     def speak_now(self):
-        """Manually trigger TTS for current sentence."""
         text = self.builder.sentence_str
         if text:
             self.tts.speak(text)

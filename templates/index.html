@@ -1,19 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Hand Gesture Control</title>
-    <!-- Modern Font: Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SignBridge — Sign Language to Speech</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
-
 <body>
-     <div class="app">
- 
+
+    <div class="app">
+
         <!-- Header -->
         <header class="header">
             <div class="logo">
@@ -21,6 +19,10 @@
                 SignBridge
             </div>
             <div class="header-right">
+                <button class="mode-toggle" id="modeToggle" onclick="toggleMode()">
+                    <span id="modeIcon">🤟</span>
+                    <span id="modeText">Sign Language</span>
+                </button>
                 <div class="pill" id="statusPill">
                     <div class="pill-dot"></div>
                     <span id="statusText">LIVE</span>
@@ -30,18 +32,18 @@
                 </div>
             </div>
         </header>
- 
+
         <!-- Main -->
         <main class="main">
- 
+
             <!-- Left: video -->
             <div class="video-panel">
                 <div class="video-wrapper">
                     <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Camera feed" />
- 
+
                     <!-- Letter chips -->
                     <div class="letters-row" id="lettersRow"></div>
- 
+
                     <!-- Gesture overlay -->
                     <div class="gesture-overlay">
                         <div class="gesture-label" id="gestureLabel">Waiting...</div>
@@ -52,10 +54,10 @@
                     </div>
                 </div>
             </div>
- 
+
             <!-- Right: controls -->
             <div class="right-panel">
- 
+
                 <!-- Sentence builder -->
                 <div class="section">
                     <div class="section-label">Sentence Builder</div>
@@ -71,14 +73,14 @@
                         </div>
                     </div>
                 </div>
- 
+
                 <!-- Action buttons -->
                 <div class="action-row">
                     <button class="btn btn-speak" onclick="speakNow()">▶ Speak</button>
                     <button class="btn btn-muted" onclick="deleteLetter()">⌫ Delete</button>
                     <button class="btn btn-muted btn-danger" onclick="clearAll()">✕ Clear</button>
                 </div>
- 
+
                 <!-- Quick phrases -->
                 <div class="section">
                     <div class="section-label">Quick Phrases</div>
@@ -93,7 +95,7 @@
                         <button class="quick-btn" onclick="quickPhrase('Please wait')">⏳ Wait</button>
                     </div>
                 </div>
- 
+
                 <!-- History -->
                 <div class="section section-grow">
                     <div class="section-label">Sentence History</div>
@@ -101,12 +103,11 @@
                         <div class="empty-msg" id="emptyMsg">No sentences yet</div>
                     </div>
                 </div>
- 
+
             </div>
         </main>
     </div>
- 
+
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
-
 </html>

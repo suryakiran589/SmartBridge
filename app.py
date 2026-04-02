@@ -94,7 +94,12 @@ def clear():
     classifier.clear_sentence()
     return jsonify({"status": "ok"})
 
-@app.route('/api/quick_phrase', methods=['POST'])
+@app.route("/api/toggle_mode", methods=["POST"])
+def toggle_mode():
+    mode = classifier.toggle_mode()
+    return jsonify({"status": "ok", "mode": mode})
+
+@app.route("/api/quick_phrase", methods=["POST"])
 def quick_phrase():
     data = request.get_json()
     text = data.get("text", "")

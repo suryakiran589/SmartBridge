@@ -26,6 +26,15 @@ function updateUI(data) {
     const sentence = data.sentence   || "";
     const signed   = data.last_signed|| "";
 
+    // ── Mode sync ──────────────────────────────────────────────────────────────
+    if (data.mode) {
+        const btn = document.getElementById('modeToggle');
+        const currentClass = btn.classList.contains('control') ? 'control' : 'sign';
+        if (data.mode !== currentClass) {
+            updateModeUI(data.mode);
+        }
+    }
+
     // ── Gesture label ──────────────────────────────────────────────────────────
     const label = document.getElementById('gestureLabel');
     const isActive = gesture && gesture !== "None" && gesture !== "...";
@@ -201,6 +210,36 @@ async function speakText(text) {
             body:    JSON.stringify({ text })
         });
     } catch(e) { console.error(e); }
+}
+
+// ── Mode toggle ────────────────────────────────────────────────────────────────
+async function toggleMode() {
+    try {
+        const res  = await fetch('/api/toggle_mode', { method: 'POST' });
+        const data = await res.json();
+        updateModeUI(data.mode);
+    } catch(e) { console.error(e); }
+}
+
+function updateModeUI(mode) {
+    const btn  = document.getElementById('modeToggle');
+    const icon = document.getElementById('modeIcon');
+    const text = document.getElementById('modeText');
+    const rightPanel = document.querySelector('.right-panel');
+
+    if (mode === 'control') {
+        btn.classList.add('control');
+        icon.textContent = '🖱️';
+        text.textContent = 'Gesture Control';
+        rightPanel.style.opacity = '0.4';
+        rightPanel.style.pointerEvents = 'none';
+    } else {
+        btn.classList.remove('control');
+        icon.textContent = '🤟';
+        text.textContent = 'Sign Language';
+        rightPanel.style.opacity = '1';
+        rightPanel.style.pointerEvents = 'auto';
+    }
 }
 
 // ── Start ──────────────────────────────────────────────────────────────────────
