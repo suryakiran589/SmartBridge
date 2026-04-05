@@ -119,6 +119,14 @@ html, body {
 
 .mode-toggle.control:hover { background: rgba(200, 80, 240, 0.2); }
 
+.mode-toggle.keyboard {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+}
+
+.mode-toggle.keyboard:hover { background: rgba(245, 158, 11, 0.2); }
+
 .pill-dot {
     width: 5px;
     height: 5px;

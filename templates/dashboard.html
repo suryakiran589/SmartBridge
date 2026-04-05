@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SignBridge — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #0a0a0a;
+  --surface: #111111;
+  --s2:      #181818;
+  --border:  #1f1f1f;
+  --b2:      #2a2a2a;
+  --text:    #f0f0f0;
+  --muted:   #555555;
+  --accent:  #00e5a0;
+  --a2:      #00b87a;
+  --purple:  #c850f0;
+  --amber:   #f59e0b;
+  --mono:    'DM Mono', monospace;
+  --display: 'Syne', sans-serif;
+}
+
+html, body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--display);
+}
+
+/* ── Header ── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.logo-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:0.4; transform:scale(0.7); }
+}
+
+.nav-link {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  transition: all 0.15s;
+}
+.nav-link:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ── Hero ── */
+.hero {
+  text-align: center;
+  padding: 72px 32px 48px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(0,229,160,0.08);
+  border: 1px solid rgba(0,229,160,0.25);
+  padding: 4px 12px;
+  border-radius: 20px;
+  letter-spacing: 0.1em;
+  margin-bottom: 24px;
+}
+
+.hero h1 {
+  font-size: clamp(36px, 6vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin-bottom: 20px;
+}
+
+.hero h1 span { color: var(--accent); }
+
+.hero p {
+  font-size: 16px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-bottom: 40px;
+  font-family: var(--mono);
+}
+
+/* ── Stats row ── */
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin-bottom: 64px;
+  flex-wrap: wrap;
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-num {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.stat-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── Mode cards ── */
+.section-title {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  max-width: 1000px;
+  margin: 0 auto 64px;
+  padding: 0 32px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--card-color, var(--accent));
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.card:hover { border-color: var(--b2); transform: translateY(-3px); }
+.card:hover::before { opacity: 1; }
+
+.card-icon {
+  font-size: 32px;
+  margin-bottom: 16px;
+  display: block;
+}
+
+.card-mode {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--card-color, var(--accent));
+  margin-bottom: 8px;
+}
+
+.card h3 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+
+.card p {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.card-gestures {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 24px;
+}
+
+.gesture-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.gesture-icon { font-size: 14px; width: 20px; text-align: center; }
+.gesture-action { color: var(--text); }
+
+.card-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--card-color, var(--accent));
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  letter-spacing: 0.05em;
+}
+
+/* ── Tech stack ── */
+.tech-section {
+  max-width: 1000px;
+  margin: 0 auto 64px;
+  padding: 0 32px;
+}
+
+.tech-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.tech-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tech-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.tech-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.tech-desc {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+/* ── About section ── */
+.about-section {
+  max-width: 760px;
+  margin: 0 auto 80px;
+  padding: 0 32px;
+  text-align: center;
+}
+
+.about-section h2 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 16px;
+}
+
+.about-section p {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+/* ── Footer ── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 24px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    SignBridge
+  </div>
+  <a href="/" class="nav-link">Open App →</a>
+</header>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="badge">FINAL YEAR PROJECT — COMPUTER VISION</div>
+  <h1>Hand Gestures that<br/><span>Bridge Communication</span></h1>
+  <p>
+    Real-time sign language recognition, gesture-based computer control,<br/>
+    and air keyboard — all from a single webcam, no special hardware.
+  </p>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-num">97%</div>
+      <div class="stat-label">Model Accuracy</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">24</div>
+      <div class="stat-label">ISL Signs</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">3</div>
+      <div class="stat-label">Modes</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">10</div>
+      <div class="stat-label">Control Gestures</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">0</div>
+      <div class="stat-label">Special Hardware</div>
+    </div>
+  </div>
+</section>
+
+<!-- Mode cards -->
+<div class="section-title">Choose a mode</div>
+<div class="cards">
+
+  <!-- Sign Language -->
+  <a href="/?mode=sign" class="card" style="--card-color: #00e5a0">
+    <span class="card-icon">🤟</span>
+    <div class="card-mode">Mode 01</div>
+    <h3>Sign Language</h3>
+    <p>Sign ISL/ASL letters to build words and sentences. Drop your hand to add a space. Sentences are spoken aloud via text-to-speech.</p>
+    <div class="card-gestures">
+      <div class="gesture-row"><span class="gesture-icon">✋</span><span class="gesture-action">Hold sign for 1s → letter confirmed</span></div>
+      <div class="gesture-row"><span class="gesture-icon">⏬</span><span class="gesture-action">Drop hand for 2s → word committed</span></div>
+      <div class="gesture-row"><span class="gesture-icon">🔊</span><span class="gesture-action">Space button → speaks full sentence</span></div>
+      <div class="gesture-row"><span class="gesture-icon">🆘</span><span class="gesture-action">Quick phrases → HELP, HELLO, PAIN...</span></div>
+    </div>
+    <div class="card-btn">Launch Sign Language Mode <span>→</span></div>
+  </a>
+
+  <!-- Gesture Control -->
+  <a href="/?mode=control" class="card" style="--card-color: #c850f0">
+    <span class="card-icon">🖱️</span>
+    <div class="card-mode">Mode 02</div>
+    <h3>Gesture Control</h3>
+    <p>Control your entire computer without touching the keyboard or mouse. Navigate, click, scroll, adjust volume — all with hand gestures.</p>
+    <div class="card-gestures">
+      <div class="gesture-row"><span class="gesture-icon">✋</span><span class="gesture-action">Open palm → mouse movement</span></div>
+      <div class="gesture-row"><span class="gesture-icon">✌️</span><span class="gesture-action">Peace sign → left click</span></div>
+      <div class="gesture-row"><span class="gesture-icon">🖖</span><span class="gesture-action">3 fingers → right click</span></div>
+      <div class="gesture-row"><span class="gesture-icon">☝️</span><span class="gesture-action">Index up / Fist → scroll up/down</span></div>
+      <div class="gesture-row"><span class="gesture-icon">📸</span><span class="gesture-action">Pinky → screenshot</span></div>
+      <div class="gesture-row"><span class="gesture-icon">🔒</span><span class="gesture-action">Shaka → lock screen</span></div>
+    </div>
+    <div class="card-btn">Launch Gesture Control <span>→</span></div>
+  </a>
+
+  <!-- Air Keyboard -->
+  <a href="/?mode=keyboard" class="card" style="--card-color: #f59e0b">
+    <span class="card-icon">⌨️</span>
+    <div class="card-mode">Mode 03</div>
+    <h3>Air Keyboard</h3>
+    <p>Type into any application by hovering your finger over a virtual QWERTY keyboard in the air. Pinch to press. No physical keyboard needed.</p>
+    <div class="card-gestures">
+      <div class="gesture-row"><span class="gesture-icon">☝️</span><span class="gesture-action">Index finger → pointer/cursor</span></div>
+      <div class="gesture-row"><span class="gesture-icon">🤏</span><span class="gesture-action">Pinch → press hovered key</span></div>
+      <div class="gesture-row"><span class="gesture-icon">⌫</span><span class="gesture-action">&lt;&lt; key → backspace</span></div>
+      <div class="gesture-row"><span class="gesture-icon">⏱️</span><span class="gesture-action">3s delay → click your target window</span></div>
+    </div>
+    <div class="card-btn">Launch Air Keyboard <span>→</span></div>
+  </a>
+
+</div>
+
+<!-- Tech stack -->
+<div class="tech-section">
+  <div class="section-title">Tech Stack</div>
+  <div class="tech-grid">
+    <div class="tech-item">
+      <div class="tech-dot"></div>
+      <div><div class="tech-name">MediaPipe</div><div class="tech-desc">Hand landmark detection</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot"></div>
+      <div><div class="tech-name">scikit-learn</div><div class="tech-desc">RandomForest / MLP classifier</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot"></div>
+      <div><div class="tech-name">OpenCV</div><div class="tech-desc">Frame processing + overlay</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot"></div>
+      <div><div class="tech-name">Flask</div><div class="tech-desc">Web server + API</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot"></div>
+      <div><div class="tech-name">pyttsx3</div><div class="tech-desc">Text to speech engine</div></div>
+    </div>
+    <div class="tech-item">
+      <div class="tech-dot"></div>
+      <div><div class="tech-name">PyAutoGUI</div><div class="tech-desc">System control layer</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- About -->
+<div class="about-section">
+  <h2>Why SignBridge?</h2>
+  <p>
+    Deaf and hard-of-hearing individuals often face communication barriers in everyday situations — 
+    hospitals, shops, classrooms — where no interpreter is available. SignBridge solves this 
+    with a single webcam and no special hardware, making assistive technology accessible to everyone.
+    Built as a Final Year Project in Computer Vision and Human-Computer Interaction.
+  </p>
+</div>
+
+<footer>
+  <span>SignBridge — Final Year Project</span>
+  <span>Computer Vision · HCI · Assistive Technology</span>
+</footer>
+
+<script>
+  // Read mode from URL and auto-switch if coming from dashboard card
+  const params = new URLSearchParams(window.location.search);
+  const mode   = params.get('mode');
+  if (mode && window.location.pathname === '/') {
+    // Switch mode via API then redirect to app
+    fetch('/api/set_mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    }).then(() => {
+      window.location.href = '/app';
+    });
+  }
+</script>
+</body>
+</html>

@@ -1,20 +1,23 @@
 """
 gesture_model.py  —  ML-powered ISL/ASL Sign Language Classifier
 =================================================================
-Two modes:
+Three modes:
   MODE 1 — Sign Language: ML classifier → sentence builder → TTS
   MODE 2 — Gesture Control: finger counting → mouse / scroll / volume / media
+  MODE 3 — Air Keyboard: virtual QWERTY keyboard, pinch to type
 """
 
 import cv2
 import numpy as np
-import json
 import os
+import math
 import platform
+import subprocess
 import threading
 import joblib
 import pyautogui
 from utils.hand_tracking import HandTracker
+from utils.virtual_keyboard import VirtualKeyboard
 
 # ── Config ──────────────────────────────────────────────────────────────────────
 
@@ -26,8 +29,9 @@ HOLD_FRAMES          = 20
 HOLD_THRESHOLD       = 0.12
 COOLDOWN_FRAMES      = 30
 
-MODE_SIGN    = "sign"
-MODE_CONTROL = "control"
+MODE_SIGN     = "sign"
+MODE_CONTROL  = "control"
+MODE_KEYBOARD = "keyboard"
 
 # Colors (BGR)
 COLOR_GREEN  = (0, 220, 80)
@@ -116,6 +120,28 @@ def extract_features(lm_list):
     return features
 
 
+# ── Cross-platform helpers ──────────────────────────────────────────────────────
+
+def screenshot():
+    if platform.system() == "Darwin":
+        pyautogui.hotkey('command', 'shift', '3')
+    else:
+        pyautogui.hotkey('win', 'shift', 's')
+
+def lock_screen():
+    if platform.system() == "Darwin":
+        try:
+            subprocess.Popen([
+                'osascript', '-e',
+                'tell application "System Events" to keystroke "q" '
+                'using {command down, control down}'
+            ])
+        except Exception:
+            pass
+    else:
+        pyautogui.hotkey('win', 'l')
+
+
 # ── Main classifier ─────────────────────────────────────────────────────────────
 
 class GestureClassifier:
@@ -141,7 +167,7 @@ class GestureClassifier:
         self.confidence     = 0.0
         self.last_signed    = ""
 
-        # Hold-to-confirm state
+        # Hold-to-confirm
         self._hold_sign     = None
         self._hold_count    = 0
         self._last_features = None
@@ -150,6 +176,9 @@ class GestureClassifier:
         # Space detection
         self._no_hand_counter  = 0
         self.NO_HAND_THRESHOLD = 50
+
+        # Virtual keyboard
+        self.virtual_kb = VirtualKeyboard(frame_w=640, frame_h=480)
 
         # PyAutoGUI (control mode)
         pyautogui.FAILSAFE = False
@@ -171,9 +200,12 @@ class GestureClassifier:
             self._hold_count      = 0
             self._hold_sign       = None
             self._no_hand_counter = 0
+        elif self.mode == MODE_CONTROL:
+            self.mode = MODE_KEYBOARD
+            self.cooldown_counter = 0
         else:
             self.mode = MODE_SIGN
-            self.cooldown_counter = 0
+            self.virtual_kb.clear()
         return self.mode
 
     # ── Model loading ─────────────────────────────────────────────────────────
@@ -247,8 +279,10 @@ class GestureClassifier:
 
         if self.mode == MODE_SIGN:
             frame = self._process_sign_mode(frame, lm_list)
-        else:
+        elif self.mode == MODE_CONTROL:
             frame = self._process_control_mode(frame, lm_list)
+        else:
+            frame = self._process_keyboard_mode(frame, lm_list)
 
         frame = self._draw_ui(frame)
         return frame
@@ -299,6 +333,27 @@ class GestureClassifier:
                 self.active_action    = "Show a sign..."
         return frame
 
+    # ── Virtual keyboard mode ─────────────────────────────────────────────────
+
+    def _process_keyboard_mode(self, frame, lm_list):
+        frame, just_typed = self.virtual_kb.process(frame, lm_list)
+        if just_typed:
+            if just_typed == 'BACK':
+                self.active_gesture = "Delete"
+                self.active_action  = "Backspace"
+            elif just_typed == ' ':
+                self.active_gesture = "SPACE"
+                self.active_action  = "Space added"
+            else:
+                self.active_gesture = just_typed
+                self.active_action  = f"Typed: {just_typed}"
+            self.last_signed = just_typed
+        else:
+            self.active_gesture = "Air Keyboard"
+            self.active_action  = "Pinch to type"
+        self.confidence = 1.0
+        return frame
+
     # ── Gesture control mode ──────────────────────────────────────────────────
 
     def _process_control_mode(self, frame, lm_list):
@@ -327,19 +382,50 @@ class GestureClassifier:
         self.confidence = 0.95
 
         if total == 5:
+            # Open palm → mouse movement
             self.active_gesture = "Open Palm"
             self.active_action  = "Mouse Movement"
             self._move_mouse(lm_list[8], frame)
 
         elif total == 0:
+            # Fist → scroll down
             self.active_gesture = "Fist"
             self.active_action  = "Scroll Down"
             if self.cooldown_counter == 0:
                 pyautogui.scroll(-500)
                 self.cooldown_counter = self.action_cooldown
 
+        elif fingers == [0, 1, 0, 0, 0]:
+            # Index only → scroll up
+            self.active_gesture = "Index Up"
+            self.active_action  = "Scroll Up"
+            if self.cooldown_counter == 0:
+                pyautogui.scroll(500)
+                self.cooldown_counter = self.action_cooldown
+
+        elif fingers == [0, 1, 1, 0, 0]:
+            # Peace sign → left click
+            self.active_gesture = "Peace Sign"
+            self.active_action  = "Left Click"
+            length, frame, info = self.tracker.find_distance(8, 12, frame)
+            if length < 40 and self.cooldown_counter == 0:
+                cv2.circle(frame, (info[4], info[5]), 15, (0, 255, 0), cv2.FILLED)
+                pyautogui.click()
+                self.active_action    = "Clicked!"
+                self.cooldown_counter = self.action_cooldown
+
+        elif fingers == [0, 1, 1, 1, 0]:
+            # 3 fingers → right click
+            self.active_gesture = "3 Fingers"
+            self.active_action  = "Right Click"
+            if self.cooldown_counter == 0:
+                pyautogui.rightClick()
+                self.active_action    = "Right Clicked!"
+                self.cooldown_counter = self.action_cooldown * 2
+
         elif fingers == [1, 1, 0, 0, 0]:
-            self.active_gesture = "Pointing / Volume"
+            # Thumb + index → volume control
+            self.active_gesture = "Volume Control"
             self.active_action  = "Pinch=Vol Down  Spread=Vol Up"
             length, frame, info = self.tracker.find_distance(4, 8, frame)
             if length < 30 and self.cooldown_counter == 0:
@@ -351,35 +437,44 @@ class GestureClassifier:
                 self.active_action    = "Volume Up"
                 self.cooldown_counter = self.action_cooldown
 
-        elif fingers == [0, 1, 1, 0, 0]:
-            self.active_gesture = "Peace Sign"
-            self.active_action  = "Click"
-            length, frame, info = self.tracker.find_distance(8, 12, frame)
-            if length < 40 and self.cooldown_counter == 0:
-                cv2.circle(frame, (info[4], info[5]), 15, (0, 255, 0), cv2.FILLED)
-                pyautogui.click()
-                self.active_action    = "Clicked!"
-                self.cooldown_counter = self.action_cooldown
-
         elif fingers == [1, 0, 0, 0, 0]:
+            # Thumbs up → play/pause
             self.active_gesture = "Thumbs Up"
             self.active_action  = "Play / Pause"
             if self.cooldown_counter == 0:
                 pyautogui.press('playpause')
                 self.cooldown_counter = self.action_cooldown * 2
 
+        elif fingers == [0, 0, 0, 0, 1]:
+            # Pinky only → screenshot
+            self.active_gesture = "Pinky"
+            self.active_action  = "Screenshot"
+            if self.cooldown_counter == 0:
+                screenshot()
+                self.active_action    = "Screenshot taken!"
+                self.cooldown_counter = self.action_cooldown * 3
+
+        elif fingers == [1, 0, 0, 0, 1]:
+            # Shaka → lock screen
+            self.active_gesture = "Shaka"
+            self.active_action  = "Lock Screen"
+            if self.cooldown_counter == 0:
+                lock_screen()
+                self.cooldown_counter = self.action_cooldown * 6
+
         return frame
 
-    # ── Mouse helper ──────────────────────────────────────────────────────────
+    # ── Mouse helper — fixed direction ────────────────────────────────────────
 
     def _move_mouse(self, index_finger_lm, frame):
         x1, y1 = index_finger_lm[1], index_finger_lm[2]
+        # FIX: removed screen_w inversion — now palm left = cursor left
         x3 = np.interp(x1, (self.frame_reduction, self.cam_w - self.frame_reduction), (0, self.screen_w))
         y3 = np.interp(y1, (self.frame_reduction, self.cam_h - self.frame_reduction), (0, self.screen_h))
         self.cloc_x = self.ploc_x + (x3 - self.ploc_x) / self.smoothing
         self.cloc_y = self.ploc_y + (y3 - self.ploc_y) / self.smoothing
         try:
-            pyautogui.moveTo(self.screen_w - self.cloc_x, self.cloc_y)
+            pyautogui.moveTo(self.cloc_x, self.cloc_y)  # ← removed inversion
             cv2.circle(frame, (x1, y1), 15, (255, 0, 255), cv2.FILLED)
             self.ploc_x, self.ploc_y = self.cloc_x, self.cloc_y
         except Exception:
@@ -390,14 +485,19 @@ class GestureClassifier:
     def _draw_ui(self, frame):
         h, w = frame.shape[:2]
 
-        # Mode badge top right of video
-        mode_color = COLOR_GREEN if self.mode == MODE_SIGN else COLOR_PURPLE
-        mode_label = "SIGN LANG" if self.mode == MODE_SIGN else "CONTROL"
+        if self.mode == MODE_SIGN:
+            mode_color = COLOR_GREEN
+            mode_label = "SIGN LANG"
+        elif self.mode == MODE_CONTROL:
+            mode_color = COLOR_PURPLE
+            mode_label = "CONTROL"
+        else:
+            mode_color = COLOR_AMBER
+            mode_label = "KEYBOARD"
         cv2.rectangle(frame, (w - 130, 10), (w - 10, 36), mode_color, -1)
         cv2.putText(frame, mode_label, (w - 122, 28),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
 
-        # Top bar
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (w, 100), (20, 20, 20), -1)
         frame = cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
@@ -438,13 +538,13 @@ class GestureClassifier:
 
     def get_current_state(self):
         return {
-            "gesture":    self.active_gesture,
-            "action":     self.active_action,
-            "confidence": f"{self.confidence:.2f}",
-            "word":       self.builder.current_word_str,
-            "sentence":   self.builder.sentence_str,
+            "gesture":     self.active_gesture,
+            "action":      self.active_action,
+            "confidence":  f"{self.confidence:.2f}",
+            "word":        self.builder.current_word_str,
+            "sentence":    self.builder.sentence_str,
             "last_signed": self.last_signed,
-            "mode":       self.mode
+            "mode":        self.mode
         }
 
     def clear_sentence(self):

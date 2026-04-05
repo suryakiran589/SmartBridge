@@ -227,14 +227,21 @@ function updateModeUI(mode) {
     const text = document.getElementById('modeText');
     const rightPanel = document.querySelector('.right-panel');
 
+    btn.classList.remove('control', 'keyboard');
+
     if (mode === 'control') {
         btn.classList.add('control');
         icon.textContent = '🖱️';
         text.textContent = 'Gesture Control';
         rightPanel.style.opacity = '0.4';
         rightPanel.style.pointerEvents = 'none';
+    } else if (mode === 'keyboard') {
+        btn.classList.add('keyboard');
+        icon.textContent = '⌨️';
+        text.textContent = 'Air Keyboard';
+        rightPanel.style.opacity = '0.4';
+        rightPanel.style.pointerEvents = 'none';
     } else {
-        btn.classList.remove('control');
         icon.textContent = '🤟';
         text.textContent = 'Sign Language';
         rightPanel.style.opacity = '1';
